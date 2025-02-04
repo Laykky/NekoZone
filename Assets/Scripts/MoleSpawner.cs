@@ -1,28 +1,20 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 public class MoleSpawner : MonoBehaviour
 {
-    public GameObject molePrefab; // Préfab de taupe
-    public GameObject bombPrefab; // Préfab de bombe
+    public List<GameEntity> m_gameEntities = new List<GameEntity>();
+
     public float minSpawnTime = 1f; // Temps minimal entre les spawns
     public float maxSpawnTime = 3f; // Temps maximal entre les spawns
     public float moleSpawnChance = 70f; // Pourcentage de chance de spawner une taupe (par exemple, 70%)
-    private Transform[] spawnPoints; // Tableau des positions de spawn (trous)
-    private List<Transform> occupiedPoints = new List<Transform>(); // Liste des positions occupées
+    private List<SpawnPoint> spawnPoints = new List<SpawnPoint>(); // Tableau des positions de spawn (trous)
 
     void Start()
     {
-        // Trouver tous les objets dans la scène avec le tag "Hole"
-        GameObject[] holes = GameObject.FindGameObjectsWithTag("Hole");
-        spawnPoints = new Transform[holes.Length];
-
-        for (int i = 0; i < holes.Length; i++)
-        {
-            spawnPoints[i] = holes[i].transform;
-        }
-
+        spawnPoints = GetComponentsInChildren<SpawnPoint>().ToList();
         StartCoroutine(SpawnMoles());
     }
 
@@ -35,53 +27,43 @@ public class MoleSpawner : MonoBehaviour
             yield return new WaitForSeconds(spawnTime);
 
             // Filtrer les spawnPoints disponibles
-            List<Transform> availablePoints = new List<Transform>(spawnPoints);
-            availablePoints.RemoveAll(point => occupiedPoints.Contains(point));
+            List<SpawnPoint> availablePoints = spawnPoints.FindAll(x => x.IsAvailable());
 
             if (availablePoints.Count > 0)
             {
                 // Position aléatoire parmi les spawnPoints disponibles
                 int spawnIndex = Random.Range(0, availablePoints.Count);
-                Transform spawnPoint = availablePoints[spawnIndex];
+                SpawnPoint spawnPoint = availablePoints[spawnIndex];
 
                 // Déterminer le type d'objet à spawner (taupe ou bombe)
-                float randomValue = Random.Range(0f, 100f);
-                GameObject objectToSpawn = (randomValue < moleSpawnChance) ? molePrefab : bombPrefab;
+                GameEntity objectToSpawn = GetWeightedEntity();
 
                 // Instancier l'objet au spawnPoint sélectionné
-                GameObject spawnedObject = Instantiate(objectToSpawn, spawnPoint.position, spawnPoint.rotation);
-                occupiedPoints.Add(spawnPoint);
-
-                // Libérer la position après un certain temps ou lorsqu'elle est détruite
-                MoleChara moleChara = spawnedObject.GetComponent<MoleChara>();
-                BombChara bombChara = spawnedObject.GetComponent<BombChara>();
-
-                if (moleChara != null)
-                {
-                    moleChara.SetSpawner(this, spawnPoint);
-                }
-                else if (bombChara != null)
-                {
-                    bombChara.SetSpawner(this, spawnPoint);
-                }
-                else
-                {
-                    StartCoroutine(ReleasePositionCoroutine(spawnPoint));
-                }
+                GameEntity spawnedObject = Instantiate(objectToSpawn, spawnPoint.transform.position, spawnPoint.transform.rotation);
+                spawnedObject.SetSpawner(this, spawnPoint);
             }
         }
     }
 
-    IEnumerator ReleasePositionCoroutine(Transform spawnPoint)
+    public GameEntity GetWeightedEntity()
     {
-        // Définir une durée pour libérer la position (par exemple, 3 secondes)
-        yield return new WaitForSeconds(3f);
-        occupiedPoints.Remove(spawnPoint);
-    }
+        int totalSum = 0;
+        for (int i = 0; i < m_gameEntities.Count; i++)
+        {
+            totalSum += m_gameEntities[i].SpawnWeight;
+        }
+        int randomWeight = Random.Range(0, totalSum);
 
-    public void ReleasePosition(Transform spawnPoint)
-    {
-        occupiedPoints.Remove(spawnPoint);
+        for (int i = 0; i < m_gameEntities.Count; i++)
+        {
+            randomWeight -= m_gameEntities[i].SpawnWeight;
+            if (randomWeight < 0)
+            {
+                return m_gameEntities[i];
+            }
+        }
+
+        return null;
     }
 }
 
